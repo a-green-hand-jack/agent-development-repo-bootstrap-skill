@@ -316,6 +316,30 @@ rules:
             repaired = run_validator(target)
             self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
 
+    def test_validator_rejects_non_contract_experiment_directory_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "demo-agent"
+            result = bootstrap_repo(target)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            experiment = target / "lab" / "experiments" / "drift-repair"
+            experiment.mkdir()
+            (experiment / "experiment-card.md").write_text("# Drift Repair\n", encoding="utf-8")
+            (experiment / "config.yaml").write_text(
+                "config: lab/code/configs/experiment/E002-drift-repair.yaml\n",
+                encoding="utf-8",
+            )
+            (experiment / "linked-claims.yaml").write_text("claims:\n  - CLM-001\n", encoding="utf-8")
+
+            failed = run_validator(target)
+            self.assertNotEqual(failed.returncode, 0, failed.stdout)
+            self.assertIn("experiment directory must match E###-slug", failed.stdout)
+
+            repaired = target / "lab" / "experiments" / "E002-drift-repair"
+            experiment.rename(repaired)
+            passed = run_validator(target)
+            self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+
     def test_chaos_drift_fails_then_repairs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "demo-agent"

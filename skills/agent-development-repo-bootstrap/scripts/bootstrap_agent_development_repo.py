@@ -1257,6 +1257,7 @@ EXPERIMENT_REQUIRED_FILES = [
     "linked-claims.yaml",
 ]
 
+EXPERIMENT_DIR_PATTERN = re.compile(r"^E[0-9]{3}-[A-Za-z0-9][A-Za-z0-9_.-]*$")
 ID_PATTERN = re.compile(r"\b(?:BEH|CLM|HYP|EVD|ACT|RSK|FAIL|TASKSET|EVAL|GATE|HG)-[A-Za-z0-9_.-]+\b")
 CURL_PIPE_SHELL_PATTERN = re.compile(r"\bcurl\b[^\n|]*\|[^\n]*(?:sh|bash)\b")
 PRIVATE_ABS_PATH_PATTERN = re.compile(r"(?<![A-Za-z0-9_])(?:/Users/|/home/|/mnt/)")
@@ -1390,8 +1391,9 @@ def main() -> int:
     experiments_root = root / "lab" / "experiments"
     if experiments_root.exists():
         for experiment_dir in sorted(path for path in experiments_root.iterdir() if path.is_dir()):
-            if not experiment_dir.name.startswith("E"):
-                continue
+            experiment_rel_path = experiment_dir.relative_to(root).as_posix()
+            if not EXPERIMENT_DIR_PATTERN.fullmatch(experiment_dir.name):
+                fail(findings, "S4", experiment_rel_path, "experiment directory must match E###-slug")
             for filename in EXPERIMENT_REQUIRED_FILES:
                 if not (experiment_dir / filename).is_file():
                     fail(findings, "S4", str(experiment_dir.relative_to(root) / filename), "experiment contract file is missing")
