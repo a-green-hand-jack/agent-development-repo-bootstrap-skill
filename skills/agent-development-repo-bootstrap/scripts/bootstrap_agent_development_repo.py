@@ -392,12 +392,12 @@ Principles:
 
 - Treat the Agent as a controlled runtime with state, policy, tools, traces, and recovery.
 - Define behavior before implementation; a prompt is not a behavior contract.
-- Define the action boundary before adding tools; tool count is not capability.
+- Define action boundaries before adding tools; tool count is not capability.
 - Engineer context per trajectory step; do not maximize context blindly.
 - Treat memory as governed durable state, not hidden chat history.
 - Use trace-native eval; final-answer scoring is not enough for tool-using Agents.
 - Convert important failures into replay or regression before claiming improvement.
-- Gate external writes, destructive actions, production mutation, privacy relaxation, and claim promotion.
+- Gate external writes, destructive actions, production mutation, privacy relaxation, and claim promotion with human approval.
 - Release only capabilities backed by a capability evidence chain.
 - Keep doctrine local to `.agent/` so Codex, Claude Code, and future code agents inherit the same operating spirit.
 """,

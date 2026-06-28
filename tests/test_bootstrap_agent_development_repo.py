@@ -291,6 +291,7 @@ class AgentDevelopmentRepoBootstrapTests(unittest.TestCase):
             result = bootstrap_repo(target, validate=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("agent harness check passed", result.stdout)
+            self.assertNotIn("[WARN]", result.stdout)
 
     def test_git_clone_preserves_required_scaffold_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
