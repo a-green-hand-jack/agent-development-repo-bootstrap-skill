@@ -316,6 +316,38 @@ rules:
             repaired = run_validator(target)
             self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
 
+    def test_validator_accepts_nested_yaml_scalar_lists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "demo-agent"
+            result = bootstrap_repo(target)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            permissions = target / "lab" / "infra" / "permissions" / "tool-permissions.yaml"
+            permissions.write_text(
+                """
+tools:
+  - name: production_shell_runner
+    description: "Runs a production shell command."
+    risk_level:
+      - destructive
+    human_gate:
+      - HG-002
+rules:
+  every_tool_requires_risk_level: true
+  every_tool_requires_human_gate: true
+  risk_levels:
+    - read_only
+    - local_write
+    - external_write
+    - money_or_compute
+    - destructive
+""",
+                encoding="utf-8",
+            )
+
+            passed = run_validator(target)
+            self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+
     def test_validator_rejects_non_contract_experiment_directory_names(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "demo-agent"

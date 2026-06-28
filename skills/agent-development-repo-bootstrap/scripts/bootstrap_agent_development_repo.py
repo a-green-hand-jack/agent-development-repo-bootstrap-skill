@@ -1289,23 +1289,77 @@ def collect_ids(root: Path, rel_path: str, prefix: str) -> set[str]:
     return {match for match in ID_PATTERN.findall(read(root / rel_path)) if match.startswith(prefix + "-")}
 
 
+def clean_yaml_scalar(value: str) -> str | None:
+    value = value.split("#", 1)[0].strip().strip("\"'")
+    if not value or value.lower() in {"null", "none", "[]"}:
+        return None
+    return value
+
+
+def split_yaml_scalar_values(value: str) -> set[str]:
+    value = value.strip()
+    if value.startswith("[") and value.endswith("]"):
+        values: set[str] = set()
+        for item in value[1:-1].split(","):
+            cleaned = clean_yaml_scalar(item)
+            if cleaned:
+                values.add(cleaned)
+        return values
+    cleaned = clean_yaml_scalar(value)
+    return {cleaned} if cleaned else set()
+
+
+def line_indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
 def collect_yaml_scalar_values(content: str, key: str) -> set[str]:
-    pattern = re.compile(rf"(?m)^\s*(?:-\s*)?{re.escape(key)}:\s*(?P<value>[^#\n]+?)\s*(?:#.*)?$")
+    """Collect simple YAML scalar values for a key without external dependencies.
+
+    Supports `key: value`, `- key: value`, `key: [a, b]`, and an indented
+    scalar list below `key:`. It intentionally ignores nested mapping values.
+    """
+    pattern = re.compile(rf"^(?P<indent>\s*)(?:-\s*)?{re.escape(key)}:\s*(?P<value>[^#\n]*)")
     values: set[str] = set()
-    for match in pattern.finditer(content):
-        value = match.group("value").strip().strip("\"'")
-        if value and value.lower() not in {"null", "none", "[]"}:
-            values.add(value)
+    lines = content.splitlines()
+    for index, line in enumerate(lines):
+        match = pattern.match(line)
+        if not match:
+            continue
+        values.update(split_yaml_scalar_values(match.group("value")))
+        base_indent = line_indent(match.group("indent"))
+        for child in lines[index + 1:]:
+            stripped = child.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            child_indent = line_indent(child)
+            if child_indent <= base_indent:
+                break
+            item_match = re.match(r"^\s*-\s*(?P<value>[^#\n]+?)\s*(?:#.*)?$", child)
+            if item_match:
+                item_value = item_match.group("value").strip()
+                if ":" not in item_value:
+                    values.update(split_yaml_scalar_values(item_value))
     return values
 
 
 def iter_named_yaml_blocks(content: str) -> list[tuple[str, str]]:
-    matches = list(re.finditer(r"(?m)^\s*-\s*name:\s*(?P<name>[^#\n]+?)\s*(?:#.*)?$", content))
+    lines = content.splitlines()
     blocks: list[tuple[str, str]] = []
-    for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
-        name = match.group("name").strip().strip("\"'")
-        blocks.append((name, content[match.start():end]))
+    pattern = re.compile(r"^(?P<indent>\s*)-\s*name:\s*(?P<name>[^#\n]+?)\s*(?:#.*)?$")
+    for index, line in enumerate(lines):
+        match = pattern.match(line)
+        if not match:
+            continue
+        block_indent = line_indent(match.group("indent"))
+        end = index + 1
+        while end < len(lines):
+            stripped = lines[end].strip()
+            if stripped and line_indent(lines[end]) <= block_indent:
+                break
+            end += 1
+        name = clean_yaml_scalar(match.group("name")) or match.group("name").strip()
+        blocks.append((name, "\n".join(lines[index:end]) + "\n"))
     return blocks
 
 
