@@ -1,0 +1,4 @@
+display_name: Agent Development Repo Bootstrap
+short_description: Initialize agent-development repos
+default_prompt: Create or convert a repository into an agent-development project with local .agent doctrine, a detailed lab/deliverables/memory harness, and a validator.
+
