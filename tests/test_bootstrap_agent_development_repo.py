@@ -222,6 +222,42 @@ class AgentDevelopmentRepoBootstrapTests(unittest.TestCase):
             self.assertIn("lab/code/src/demo_agent/prompts/system.md", prompt_config)
             self.assertNotIn("{package}", prompt_config)
 
+    def test_bootstrap_writes_agent_development_doctrine(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "demo-agent"
+            result = bootstrap_repo(target)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            doctrine_files = [
+                ".agent/principles.md",
+                ".agent/development-methodology.md",
+                ".agent/repo-structure-contract.md",
+                ".agent/session-protocol.md",
+                ".agent/behavior-contract.md",
+                ".agent/action-boundary.md",
+                ".agent/context-memory-policy.md",
+                ".agent/trace-eval-loop.md",
+                ".agent/capability-evidence-chain.md",
+                ".agent/production-control-plane.md",
+            ]
+            doctrine = "\n".join(
+                (target / rel_path).read_text(encoding="utf-8").lower() for rel_path in doctrine_files
+            )
+            for phrase in [
+                "controlled runtime",
+                "behavior contract",
+                "action boundary",
+                "context policy",
+                "trace-native eval",
+                "human-gated side effects",
+                "capability evidence chain",
+                "production control plane",
+                "memory gc",
+                "release only capabilities",
+                "regression-backed learning loop",
+            ]:
+                self.assertIn(phrase, doctrine)
+
     def test_bootstrap_does_not_overwrite_without_force(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "demo-agent"

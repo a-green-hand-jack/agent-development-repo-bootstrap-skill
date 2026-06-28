@@ -337,21 +337,39 @@ python3 scripts/check-agent-harness.py
         ".agent/principles.md": """
 # Agent Development Principles
 
-- Treat the Agent as a controlled runtime, not a prompt.
-- Define behavior before implementation.
-- Define action boundaries before adding tools.
-- Engineer context per step; do not maximize context blindly.
-- Treat memory as durable state policy, not chat history.
-- Use trace-native evals; final-answer scoring is not enough.
-- Turn failures into regression cases before claiming improvement.
-- Gate high-risk side effects with human approval.
-- Release only capabilities that have evidence.
-- Keep doctrine local to `.agent/` so future code-agent sessions inherit the same spirit.
+This project treats an Agent as an engineered system, not as a long prompt.
+
+Core invariant:
+
+```text
+good Agent
+  = narrow behavior contract
+  + explicit action boundary
+  + engineered context
+  + constrained tool / skill interface
+  + traceable runtime
+  + human-gated side effects
+  + regression-backed learning loop
+  + production control plane
+```
+
+Principles:
+
+- Treat the Agent as a controlled runtime with state, policy, tools, traces, and recovery.
+- Define behavior before implementation; a prompt is not a behavior contract.
+- Define the action boundary before adding tools; tool count is not capability.
+- Engineer context per trajectory step; do not maximize context blindly.
+- Treat memory as governed durable state, not hidden chat history.
+- Use trace-native eval; final-answer scoring is not enough for tool-using Agents.
+- Convert important failures into replay or regression before claiming improvement.
+- Gate external writes, destructive actions, production mutation, privacy relaxation, and claim promotion.
+- Release only capabilities backed by a capability evidence chain.
+- Keep doctrine local to `.agent/` so Codex, Claude Code, and future code agents inherit the same operating spirit.
 """,
         ".agent/development-methodology.md": """
 # Development Methodology
 
-Use three loops.
+Develop through three connected loops. Keep them explicit in code, configs, ledgers, and release notes.
 
 ## Design Loop
 
@@ -359,17 +377,43 @@ Use three loops.
 behavior contract -> action boundary -> context policy -> tool/skill interface -> runtime topology
 ```
 
+This loop decides what the Agent is allowed to become. Put model flexibility inside deterministic rails:
+
+- the model handles uncertain judgment;
+- code handles state, permissions, recovery, approvals, and logs;
+- the harness proves behavior with traces and regression.
+
 ## Evidence Loop
 
 ```text
 trace -> label/review -> eval dataset -> regression -> evidence ledger -> release gate
 ```
 
+This loop decides whether a capability claim is real. A changed prompt, model, tool, policy, memory rule, or infra target is not an improvement until evidence changes.
+
 ## Production Loop
 
 ```text
 telemetry -> incident -> failure analysis -> regression -> policy/runtime update -> release
 ```
+
+This loop keeps the Agent honest after deployment. Production quality comes from observation, approval, rollback, and learning from traces.
+
+## Development Order
+
+1. Define task domain and error cost.
+2. Write the first behavior contract.
+3. Design the action space and human gates.
+4. Define context policy and memory write policy.
+5. Implement the thinnest vertical slice:
+
+   ```text
+   input -> context -> tool -> decision -> trace -> eval -> output
+   ```
+
+6. Establish trace-first eval before adding breadth.
+7. Let failures drive prompt/tool/policy/code changes.
+8. Add deep, ambient, or managed-agent topology only after the short workflow is stable.
 
 Prefer narrow vertical slices: one behavior, one action boundary, one traceable eval path, one release gate.
 """,
@@ -386,7 +430,7 @@ memory/       active project control plane
 scripts/      deterministic checks and maintenance
 ```
 
-Core chain:
+The structure exists to preserve the capability evidence chain:
 
 ```text
 capability claim
@@ -398,6 +442,29 @@ capability claim
   -> evidence ledger
   -> release note / docs / product behavior
 ```
+
+If this chain breaks, a capability is only a wish. The repo must let a future human or code agent answer:
+
+```text
+What does this Agent claim it can do?
+Which run, config, permission policy, prompt, model route, and memory policy produced the evidence?
+Which failures are protected by regression?
+Which release promises are backed by evidence?
+Which risks still require a human gate?
+```
+
+## Component Responsibilities
+
+- `.agent/` stores local doctrine and session rules for code agents.
+- `lab/code/` stores runtime implementation, configs, scripts, tests, baselines, and benchmarks.
+- `lab/infra/` stores provider, target, permission, dependency, script, path, storage, and probe contracts.
+- `lab/research/` stores behavior facts: claims, hypotheses, evidence, regressions, comparisons, gates, and risks.
+- `lab/data/` stores task sets, trace corpora, labels, golden cases, schemas, privacy rules, and checksums.
+- `lab/experiments/` stores one contract directory per experiment: `E###-slug/`.
+- `lab/runs/` stores runtime output; durable facts must be promoted into `lab/artifacts/` and `lab/research/`.
+- `lab/artifacts/` stores indexes and evidence bundles; large artifacts are referenced, not dumped.
+- `deliverables/` stores human-facing promises and must not exceed `lab/research/evidence.yaml`.
+- `memory/` is the active project control plane; memory GC prevents stale facts from steering future work.
 """,
         ".agent/session-protocol.md": """
 # Session Protocol
@@ -408,6 +475,7 @@ capability claim
 2. Read `memory/current-status.md`.
 3. Identify the relevant claim, behavior, tool, eval, or release gate.
 4. Define the smallest verifiable change.
+5. Check whether the change crosses an action boundary, context policy, memory policy, or release gate.
 
 ## During Work
 
@@ -415,18 +483,23 @@ capability claim
 - Keep runtime and provider assumptions in `lab/infra/`.
 - Keep durable behavior evidence in `lab/research/` and `lab/artifacts/`.
 - Keep active state in `memory/`.
+- If changing behavior, update claim/eval/evidence ledgers in the same branch of work.
+- If fixing a failure, preserve the trace or summary and add a regression path.
+- If widening permissions, changing production target, or promoting a claim, require the matching human gate.
 
 ## Closeout
 
 1. Update evidence, regression, or blocker ledgers.
 2. Update `memory/current-status.md`.
 3. Run `python3 scripts/check-agent-harness.py`.
-4. Report changed files and remaining risk.
+4. Report changed files, validation evidence, and remaining risk.
 """,
         ".agent/behavior-contract.md": """
 # Behavior Contract
 
 Define what the Agent should do, should not do, and how it should behave under uncertainty.
+
+The behavior contract is the smallest design unit. Do not start from "make a better Agent"; start from one testable behavior promise.
 
 Minimum fields for any new behavior:
 
@@ -441,6 +514,18 @@ eval task set
 human gate if any
 release gate
 ```
+
+Good behavior contracts answer:
+
+```text
+What can the Agent do?
+What must it refuse, draft, or escalate?
+What evidence would prove this behavior?
+What trace would disprove it?
+Which release claim depends on it?
+```
+
+Without a behavior contract, prompt changes have no anchor, evals do not know what to measure, and release notes can drift beyond evidence.
 """,
         ".agent/action-boundary.md": """
 # Action Boundary
@@ -458,11 +543,33 @@ approval requirement
 logging requirement
 rollback or repair path
 ```
+
+Use this risk ladder:
+
+```text
+read-only deterministic action -> auto
+local reversible write -> logged
+external write or user-visible message -> human gate
+money, production mutation, privacy relaxation, destructive action -> explicit approval
+regulated or irreversible action -> forbid unless a project-specific gate exists
+```
+
+The action boundary belongs in deterministic policy first and prompt wording second. If a tool can bypass policy, the Agent is not controlled.
 """,
         ".agent/context-memory-policy.md": """
 # Context And Memory Policy
 
 Context is what the model sees for a step. Memory is durable state.
+
+Context policy must decide:
+
+```text
+always include
+retrieve on demand
+compress
+isolate
+never include
+```
 
 Rules:
 
@@ -471,6 +578,18 @@ Rules:
 - Record memory read/write rules in `lab/code/configs/memory/`.
 - Do not store secrets, credentials, or private user data in memory.
 - Move stale active memory through `memory/gc/`.
+
+Memory policy must answer:
+
+```text
+who wrote this memory
+why it was written
+when it expires
+which behavior, failure, or claim it affects
+how it can be edited, tombstoned, or replay-tested
+```
+
+Memory GC is part of correctness. Stale memory can silently change future Agent behavior.
 """,
         ".agent/tool-skill-interface.md": """
 # Tool And Skill Interface
@@ -503,6 +622,22 @@ task set -> run/eval -> trace -> label/judge -> evidence -> regression -> releas
 ```
 
 Any fixed failure should add or update a regression case.
+
+Trace eval should inspect:
+
+```text
+messages
+tool calls and arguments
+tool outputs
+state changes
+memory writes
+human interrupts
+guardrail events
+cost and latency
+final output
+```
+
+Use deterministic checks first, calibrated LLM judges for fuzzy criteria, and human labels where release risk is high. A score without failure labels is not enough evidence.
 """,
         ".agent/capability-evidence-chain.md": """
 # Capability Evidence Chain
@@ -540,13 +675,36 @@ Production agents require:
 
 - telemetry
 - tracing
-- pause/kill switch
-- approval inbox
+- pause or kill switch
+- approval, edit, and reject inbox
 - rollback or repair path
 - incident capture
 - regression learning loop
+- memory editor and tombstone path
+- cost and latency monitor
+- security and privacy alerts
+- release gates backed by evidence
 
 Do not call a release production-ready unless these controls are addressed or explicitly out of scope.
+
+Minimum production metrics:
+
+```text
+task completion rate
+unsafe action rate
+approval request rate
+approval rejection rate
+human correction rate
+escalation rate
+regression recurrence rate
+tool error rate
+memory write error rate
+latency
+cost per successful task
+interrupt rate
+```
+
+Production is not just an endpoint. It is a control plane that makes behavior observable, stoppable, reviewable, reversible, and learnable.
 """,
         ".agent/anti-patterns.md": """
 # Anti-Patterns
