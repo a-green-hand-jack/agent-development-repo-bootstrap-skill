@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -199,6 +200,23 @@ def detect_skill_commit() -> str:
     return "unknown-installed-copy"
 
 
+def detect_skill_install_metadata() -> dict[str, str]:
+    for lock_path in [
+        Path.home() / ".agents" / ".skill-lock.json",
+        Path.home() / ".codex" / ".skill-lock.json",
+    ]:
+        if not lock_path.is_file():
+            continue
+        try:
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        skill = lock.get("skills", {}).get(SKILL_NAME)
+        if isinstance(skill, dict):
+            return {str(key): str(value) for key, value in skill.items() if value is not None}
+    return {}
+
+
 def generated_at_utc() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -209,6 +227,12 @@ def files(ctx: Context) -> dict[str, str]:
     package = ctx.package_name
     domain = ctx.domain
     runtime_profile = ctx.runtime_profile
+    skill_install = detect_skill_install_metadata()
+    skill_commit = detect_skill_commit()
+    skill_folder_hash = skill_install.get("skillFolderHash", "unknown")
+    skill_version = skill_commit
+    if skill_commit == "unknown-installed-copy" and skill_folder_hash != "unknown":
+        skill_version = f"folder-hash:{skill_folder_hash}"
     return {
         ".gitignore": """
 .DS_Store
@@ -360,8 +384,14 @@ python3 scripts/check-agent-harness.py
 """,
         ".agent/bootstrap-provenance.yaml": f"""
 skill_name: "{SKILL_NAME}"
-skill_repo: "{SKILL_REPO}"
-skill_commit: "{detect_skill_commit()}"
+skill_repo: "{skill_install.get("sourceUrl", SKILL_REPO)}"
+skill_source: "{skill_install.get("source", "unknown")}"
+skill_source_type: "{skill_install.get("sourceType", "unknown")}"
+skill_path: "{skill_install.get("skillPath", "unknown")}"
+skill_commit: "{skill_commit}"
+skill_folder_hash: "{skill_folder_hash}"
+skill_version: "{skill_version}"
+skill_updated_at: "{skill_install.get("updatedAt", "unknown")}"
 generated_at_utc: "{generated_at_utc()}"
 project_name: "{project}"
 agent_name: "{agent}"

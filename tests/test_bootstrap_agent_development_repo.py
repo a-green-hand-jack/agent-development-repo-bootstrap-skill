@@ -226,8 +226,15 @@ class AgentDevelopmentRepoBootstrapTests(unittest.TestCase):
             provenance = (target / ".agent/bootstrap-provenance.yaml").read_text(encoding="utf-8")
             for expected in [
                 'skill_name: "agent-development-repo-bootstrap"',
-                'skill_repo: "https://github.com/a-green-hand-jack/agent-development-repo-bootstrap-skill"',
+                "skill_repo:",
+                "agent-development-repo-bootstrap-skill",
+                "skill_source:",
+                "skill_source_type:",
+                "skill_path:",
                 "skill_commit:",
+                "skill_folder_hash:",
+                "skill_version:",
+                "skill_updated_at:",
                 "generated_at_utc:",
                 'project_name: "Demo Agent Project"',
                 'agent_name: "demo_agent"',
