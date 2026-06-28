@@ -1289,6 +1289,32 @@ def collect_ids(root: Path, rel_path: str, prefix: str) -> set[str]:
     return {match for match in ID_PATTERN.findall(read(root / rel_path)) if match.startswith(prefix + "-")}
 
 
+def collect_task_set_ids(root: Path) -> set[str]:
+    ids: set[str] = set()
+    task_sets_root = root / "lab" / "data" / "task-sets"
+    if not task_sets_root.exists():
+        return ids
+    for path in task_sets_root.glob("*.yaml"):
+        ids.add(path.stem)
+        ids.update(collect_yaml_scalar_values(read(path), "id"))
+    return ids
+
+
+def fail_unknown_refs(findings: list[str], rel_path: str, refs: set[str], known: set[str], label: str) -> None:
+    for ref in sorted(refs - known):
+        fail(findings, "S3", rel_path, f"references unknown {label}: {ref}")
+
+
+def is_local_source_ref(value: str) -> bool:
+    return not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value) and not value.startswith("logical:")
+
+
+def validate_source_refs(findings: list[str], root: Path, rel_path: str) -> None:
+    for source in sorted(collect_yaml_scalar_values(read(root / rel_path), "source")):
+        if is_local_source_ref(source) and not (root / source).exists():
+            fail(findings, "S3", rel_path, f"source path does not exist: {source}")
+
+
 def clean_yaml_scalar(value: str) -> str | None:
     value = value.split("#", 1)[0].strip().strip("\"'")
     if not value or value.lower() in {"null", "none", "[]"}:
@@ -1326,7 +1352,10 @@ def collect_yaml_scalar_values(content: str, key: str) -> set[str]:
         match = pattern.match(line)
         if not match:
             continue
-        values.update(split_yaml_scalar_values(match.group("value")))
+        direct_values = split_yaml_scalar_values(match.group("value"))
+        values.update(direct_values)
+        if direct_values:
+            continue
         base_indent = line_indent(match.group("indent"))
         for child in lines[index + 1:]:
             stripped = child.strip()
@@ -1407,16 +1436,89 @@ def main() -> int:
     claim_ids = collect_ids(root, "lab/research/claims.yaml", "CLM")
     evidence_ids = collect_ids(root, "lab/research/evidence.yaml", "EVD")
     gate_ids = collect_ids(root, "lab/research/release-gates.yaml", "GATE")
+    hypothesis_ids = collect_ids(root, "lab/research/hypotheses.yaml", "HYP")
+    task_set_ids = collect_task_set_ids(root)
+    failure_ids = collect_ids(root, "lab/research/failure-analysis.md", "FAIL")
 
     if not claim_ids:
         fail(findings, "S3", "lab/research/claims.yaml", "no CLM-* capability claim ids found")
     if not gate_ids:
         fail(findings, "S3", "lab/research/release-gates.yaml", "no GATE-* release gate ids found")
+    if not task_set_ids:
+        fail(findings, "S3", "lab/data/task-sets", "no TASKSET-* task set ids found")
 
     for evidence_id in sorted(collect_ids(root, "lab/research/claims.yaml", "EVD") - evidence_ids):
         fail(findings, "S3", "lab/research/claims.yaml", f"references unknown evidence id: {evidence_id}")
     for evidence_id in sorted(collect_ids(root, "lab/artifacts/result-index.yaml", "EVD") - evidence_ids):
         fail(findings, "S3", "lab/artifacts/result-index.yaml", f"references unknown evidence id: {evidence_id}")
+
+    release_gates = read(root / "lab/research/release-gates.yaml")
+    fail_unknown_refs(
+        findings,
+        "lab/research/release-gates.yaml",
+        collect_yaml_scalar_values(release_gates, "required_claims"),
+        claim_ids,
+        "claim id",
+    )
+    fail_unknown_refs(
+        findings,
+        "lab/research/release-gates.yaml",
+        collect_yaml_scalar_values(release_gates, "required_evidence"),
+        evidence_ids,
+        "evidence id",
+    )
+
+    capability_matrix = read(root / "lab/research/capability-matrix.yaml")
+    fail_unknown_refs(
+        findings,
+        "lab/research/capability-matrix.yaml",
+        collect_yaml_scalar_values(capability_matrix, "capability"),
+        claim_ids,
+        "claim id",
+    )
+    fail_unknown_refs(
+        findings,
+        "lab/research/capability-matrix.yaml",
+        collect_yaml_scalar_values(capability_matrix, "release_gate"),
+        gate_ids,
+        "release gate id",
+    )
+    fail_unknown_refs(
+        findings,
+        "lab/research/capability-matrix.yaml",
+        collect_yaml_scalar_values(capability_matrix, "task_sets"),
+        task_set_ids,
+        "task set id",
+    )
+    fail_unknown_refs(
+        findings,
+        "lab/research/capability-matrix.yaml",
+        collect_yaml_scalar_values(capability_matrix, "evidence"),
+        evidence_ids,
+        "evidence id",
+    )
+
+    regression_matrix = read(root / "lab/research/regression-matrix.yaml")
+    fail_unknown_refs(
+        findings,
+        "lab/research/regression-matrix.yaml",
+        collect_yaml_scalar_values(regression_matrix, "regression_case"),
+        task_set_ids,
+        "task set id",
+    )
+    fail_unknown_refs(
+        findings,
+        "lab/research/regression-matrix.yaml",
+        collect_yaml_scalar_values(regression_matrix, "failure"),
+        failure_ids,
+        "failure id",
+    )
+    for rel_path in [
+        "lab/artifacts/trace-index.yaml",
+        "lab/artifacts/prompt-index.yaml",
+        "lab/artifacts/policy-index.yaml",
+    ]:
+        validate_source_refs(findings, root, rel_path)
 
     expected_control_tokens = {
         "lab/infra/permissions/tool-permissions.yaml": "risk_levels:",
@@ -1454,6 +1556,20 @@ def main() -> int:
             linked = read(experiment_dir / "linked-claims.yaml")
             if linked and not any(token.startswith(("CLM-", "HYP-")) for token in ID_PATTERN.findall(linked)):
                 fail(findings, "S4", str((experiment_dir / "linked-claims.yaml").relative_to(root)), "no CLM-* or HYP-* link found")
+            fail_unknown_refs(
+                findings,
+                str((experiment_dir / "linked-claims.yaml").relative_to(root)),
+                collect_yaml_scalar_values(linked, "claims"),
+                claim_ids,
+                "claim id",
+            )
+            fail_unknown_refs(
+                findings,
+                str((experiment_dir / "linked-claims.yaml").relative_to(root)),
+                collect_yaml_scalar_values(linked, "hypotheses"),
+                hypothesis_ids,
+                "hypothesis id",
+            )
 
     status = read(root / "memory/current-status.md").lower()
     if not any(token in status for token in ["next", "blocker", "risk", "blocked"]):

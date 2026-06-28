@@ -15,7 +15,7 @@ def run(command: list[str], *, cwd: Path | None = None) -> subprocess.CompletedP
     return subprocess.run(command, cwd=cwd, check=False, text=True, capture_output=True)
 
 
-def bootstrap_repo(target: Path, *, validate: bool = False) -> subprocess.CompletedProcess[str]:
+def bootstrap_repo(target: Path, *, validate: bool = False, force: bool = False) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
         str(SCRIPT),
@@ -27,6 +27,8 @@ def bootstrap_repo(target: Path, *, validate: bool = False) -> subprocess.Comple
         "--domain",
         "repository automation",
     ]
+    if force:
+        command.append("--force")
     if validate:
         command.append("--validate")
     return run(command)
@@ -345,6 +347,89 @@ rules:
                 encoding="utf-8",
             )
 
+            passed = run_validator(target)
+            self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+
+    def test_validator_rejects_unknown_cross_ledger_references(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "demo-agent"
+            result = bootstrap_repo(target)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            (target / "lab" / "research" / "release-gates.yaml").write_text(
+                """
+- id: GATE-001
+  release: bootstrap
+  required_claims:
+    - CLM-999
+  required_evidence:
+    - EVD-999
+  required_regressions: []
+  human_approvals: []
+  status: blocked
+""",
+                encoding="utf-8",
+            )
+            (target / "lab" / "research" / "capability-matrix.yaml").write_text(
+                """
+- capability: CLM-999
+  behavior_contract: BEH-001
+  task_sets:
+    - TASKSET-999
+  evidence:
+    - EVD-999
+  release_gate: GATE-999
+  status: draft
+""",
+                encoding="utf-8",
+            )
+            (target / "lab" / "research" / "regression-matrix.yaml").write_text(
+                """
+- failure: FAIL-999
+  regression_case: TASKSET-999
+  status: open
+""",
+                encoding="utf-8",
+            )
+            (target / "lab" / "artifacts" / "trace-index.yaml").write_text(
+                """
+- id: TRACE-999
+  source: lab/data/trace-corpora/missing.json
+  linked_failure: FAIL-999
+""",
+                encoding="utf-8",
+            )
+            (target / "lab" / "artifacts" / "prompt-index.yaml").write_text(
+                """
+- id: PROMPT-999
+  source: lab/code/src/demo_agent/prompts/missing.md
+""",
+                encoding="utf-8",
+            )
+            (target / "lab" / "artifacts" / "policy-index.yaml").write_text(
+                """
+- id: POLICY-999
+  source: lab/code/src/demo_agent/policies/missing.md
+""",
+                encoding="utf-8",
+            )
+
+            failed = run_validator(target)
+            self.assertNotEqual(failed.returncode, 0, failed.stdout)
+            for message in [
+                "references unknown claim id: CLM-999",
+                "references unknown evidence id: EVD-999",
+                "references unknown release gate id: GATE-999",
+                "references unknown task set id: TASKSET-999",
+                "references unknown failure id: FAIL-999",
+                "source path does not exist: lab/data/trace-corpora/missing.json",
+                "source path does not exist: lab/code/src/demo_agent/prompts/missing.md",
+                "source path does not exist: lab/code/src/demo_agent/policies/missing.md",
+            ]:
+                self.assertIn(message, failed.stdout)
+
+            repaired = bootstrap_repo(target, force=True)
+            self.assertEqual(repaired.returncode, 0, repaired.stderr)
             passed = run_validator(target)
             self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
 
