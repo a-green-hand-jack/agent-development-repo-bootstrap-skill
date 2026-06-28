@@ -114,6 +114,17 @@ DIRS = [
     "scripts",
 ]
 
+ALWAYS_KEEP_DIRS = {
+    "lab/infra/private",
+    "lab/runs/eval",
+    "lab/runs/replay",
+    "lab/runs/live-trial",
+    "lab/runs/red-team",
+    "lab/runs/incident",
+    "lab/artifacts/evidence-bundles",
+    "lab/artifacts/release-packages",
+}
+
 
 @dataclass
 class Context:
@@ -185,12 +196,18 @@ __pycache__/
 *.log
 
 # Private machine overlays and runtime output
-lab/infra/private/
-lab/runs/
+lab/infra/private/*
+!lab/infra/private/.gitkeep
+lab/runs/**
+!lab/runs/
+!lab/runs/**/
+!lab/runs/**/.gitkeep
 
 # Large generated artifacts are indexed, not committed directly.
-lab/artifacts/release-packages/
-lab/artifacts/evidence-bundles/
+lab/artifacts/release-packages/*
+!lab/artifacts/release-packages/.gitkeep
+lab/artifacts/evidence-bundles/*
+!lab/artifacts/evidence-bundles/.gitkeep
 """,
         "README.md": f"""
 # {project}
@@ -1431,6 +1448,14 @@ def bootstrap(ctx: Context) -> Writer:
         writer.mkdir(rel_path)
     for rel_path, content in files(ctx).items():
         writer.write(rel_path, content, executable=rel_path == "scripts/check-agent-harness.py")
+    for rel_path in DIRS:
+        formatted = rel_path.format(package=ctx.package_name)
+        path = ctx.root / formatted
+        needs_marker = formatted in ALWAYS_KEEP_DIRS
+        if not ctx.dry_run and path.exists():
+            needs_marker = needs_marker or not any(child.is_file() for child in path.iterdir())
+        if needs_marker:
+            writer.write(f"{rel_path}/.gitkeep", "")
     return writer
 
 

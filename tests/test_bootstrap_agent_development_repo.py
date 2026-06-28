@@ -239,6 +239,45 @@ class AgentDevelopmentRepoBootstrapTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("agent harness check passed", result.stdout)
 
+    def test_git_clone_preserves_required_scaffold_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "demo-agent"
+            result = bootstrap_repo(target)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            self.assertEqual(run(["git", "init"], cwd=target).returncode, 0)
+            self.assertEqual(run(["git", "add", "."], cwd=target).returncode, 0)
+            tracked = run(["git", "ls-files"], cwd=target)
+            self.assertEqual(tracked.returncode, 0, tracked.stderr)
+            for rel_path in [
+                "lab/code/baselines/wrappers/.gitkeep",
+                "lab/infra/private/.gitkeep",
+                "lab/runs/eval/.gitkeep",
+                "lab/artifacts/evidence-bundles/.gitkeep",
+            ]:
+                self.assertIn(rel_path, tracked.stdout)
+
+            commit = run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=Agent Test",
+                    "-c",
+                    "user.email=agent-test@example.com",
+                    "commit",
+                    "-m",
+                    "initial scaffold",
+                ],
+                cwd=target,
+            )
+            self.assertEqual(commit.returncode, 0, commit.stderr)
+
+            clone = Path(tmp) / "clone"
+            cloned = run(["git", "clone", str(target), str(clone)])
+            self.assertEqual(cloned.returncode, 0, cloned.stderr)
+            validated = run_validator(clone)
+            self.assertEqual(validated.returncode, 0, validated.stdout + validated.stderr)
+
     def test_validator_rejects_unknown_human_gate_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "demo-agent"
