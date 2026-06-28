@@ -239,6 +239,44 @@ class AgentDevelopmentRepoBootstrapTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("agent harness check passed", result.stdout)
 
+    def test_validator_rejects_unknown_human_gate_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "demo-agent"
+            result = bootstrap_repo(target)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            permissions = target / "lab" / "infra" / "permissions" / "tool-permissions.yaml"
+            permissions.write_text(
+                """
+tools:
+  - name: production_shell_runner
+    description: "Runs a production shell command."
+    risk_level: destructive
+    human_gate: HG-missing-production-shell
+rules:
+  every_tool_requires_risk_level: true
+  every_tool_requires_human_gate: true
+  risk_levels:
+    - read_only
+    - local_write
+    - external_write
+    - money_or_compute
+    - destructive
+""",
+                encoding="utf-8",
+            )
+
+            failed = run_validator(target)
+            self.assertNotEqual(failed.returncode, 0, failed.stdout)
+            self.assertIn("references unknown human_gate: HG-missing-production-shell", failed.stdout)
+
+            permissions.write_text(
+                permissions.read_text(encoding="utf-8").replace("HG-missing-production-shell", "HG-002"),
+                encoding="utf-8",
+            )
+            repaired = run_validator(target)
+            self.assertEqual(repaired.returncode, 0, repaired.stdout + repaired.stderr)
+
     def test_chaos_drift_fails_then_repairs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "demo-agent"

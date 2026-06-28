@@ -1271,6 +1271,26 @@ def collect_ids(root: Path, rel_path: str, prefix: str) -> set[str]:
     return {match for match in ID_PATTERN.findall(read(root / rel_path)) if match.startswith(prefix + "-")}
 
 
+def collect_yaml_scalar_values(content: str, key: str) -> set[str]:
+    pattern = re.compile(rf"(?m)^\s*(?:-\s*)?{re.escape(key)}:\s*(?P<value>[^#\n]+?)\s*(?:#.*)?$")
+    values: set[str] = set()
+    for match in pattern.finditer(content):
+        value = match.group("value").strip().strip("\"'")
+        if value and value.lower() not in {"null", "none", "[]"}:
+            values.add(value)
+    return values
+
+
+def iter_named_yaml_blocks(content: str) -> list[tuple[str, str]]:
+    matches = list(re.finditer(r"(?m)^\s*-\s*name:\s*(?P<name>[^#\n]+?)\s*(?:#.*)?$", content))
+    blocks: list[tuple[str, str]] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+        name = match.group("name").strip().strip("\"'")
+        blocks.append((name, content[match.start():end]))
+    return blocks
+
+
 def is_skipped_scan_path(root: Path, path: Path) -> bool:
     rel = path.relative_to(root).as_posix()
     if rel == "scripts/check-agent-harness.py":
@@ -1339,10 +1359,16 @@ def main() -> int:
             fail(findings, "S2", rel_path, f"expected control token missing: {token}")
 
     tool_permissions = read(root / "lab/infra/permissions/tool-permissions.yaml")
-    if re.search(r"(?m)^\s*-\s*name:\s*", tool_permissions):
-        for token in ["risk_level", "human_gate"]:
-            if token not in tool_permissions:
-                fail(findings, "S2", "lab/infra/permissions/tool-permissions.yaml", f"registered tools require {token}")
+    human_gate_ids = collect_yaml_scalar_values(read(root / "lab/infra/permissions/human-gates.yaml"), "id")
+    for tool_name, tool_block in iter_named_yaml_blocks(tool_permissions):
+        if not collect_yaml_scalar_values(tool_block, "risk_level"):
+            fail(findings, "S2", "lab/infra/permissions/tool-permissions.yaml", f"registered tool {tool_name!r} requires risk_level")
+        gate_refs = collect_yaml_scalar_values(tool_block, "human_gate")
+        if not gate_refs:
+            fail(findings, "S2", "lab/infra/permissions/tool-permissions.yaml", f"registered tool {tool_name!r} requires human_gate")
+        for gate_ref in sorted(gate_refs):
+            if gate_ref not in human_gate_ids:
+                fail(findings, "S2", "lab/infra/permissions/tool-permissions.yaml", f"registered tool {tool_name!r} references unknown human_gate: {gate_ref}")
 
     experiments_root = root / "lab" / "experiments"
     if experiments_root.exists():
