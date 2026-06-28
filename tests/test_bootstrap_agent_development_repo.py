@@ -206,6 +206,7 @@ class AgentDevelopmentRepoBootstrapTests(unittest.TestCase):
 
             expected_paths = [
                 ".agent/principles.md",
+                ".agent/bootstrap-provenance.yaml",
                 ".agent/development-methodology.md",
                 ".agent/repo-structure-contract.md",
                 "lab/code/src/demo_agent/runtime/loop.py",
@@ -221,6 +222,20 @@ class AgentDevelopmentRepoBootstrapTests(unittest.TestCase):
             prompt_config = (target / "lab/code/configs/prompt/default.yaml").read_text(encoding="utf-8")
             self.assertIn("lab/code/src/demo_agent/prompts/system.md", prompt_config)
             self.assertNotIn("{package}", prompt_config)
+
+            provenance = (target / ".agent/bootstrap-provenance.yaml").read_text(encoding="utf-8")
+            for expected in [
+                'skill_name: "agent-development-repo-bootstrap"',
+                'skill_repo: "https://github.com/a-green-hand-jack/agent-development-repo-bootstrap-skill"',
+                "skill_commit:",
+                "generated_at_utc:",
+                'project_name: "Demo Agent Project"',
+                'agent_name: "demo_agent"',
+                'package_name: "demo_agent"',
+                'domain: "repository automation"',
+                'runtime_profile: "single-agent"',
+            ]:
+                self.assertIn(expected, provenance)
 
     def test_bootstrap_writes_agent_development_doctrine(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

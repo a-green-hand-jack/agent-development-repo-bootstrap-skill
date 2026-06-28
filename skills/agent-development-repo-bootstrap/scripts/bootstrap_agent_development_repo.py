@@ -8,8 +8,12 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
+
+SKILL_NAME = "agent-development-repo-bootstrap"
+SKILL_REPO = "https://github.com/a-green-hand-jack/agent-development-repo-bootstrap-skill"
 
 DIRS = [
     ".agent/checklists",
@@ -179,6 +183,26 @@ def py_name(value: str) -> str:
     return name
 
 
+def detect_skill_commit() -> str:
+    current = Path(__file__).resolve()
+    for parent in [current.parent, *current.parents]:
+        if not (parent / ".git").exists():
+            continue
+        result = subprocess.run(
+            ["git", "-C", str(parent), "rev-parse", "--short", "HEAD"],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    return "unknown-installed-copy"
+
+
+def generated_at_utc() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def files(ctx: Context) -> dict[str, str]:
     project = ctx.project_name
     agent = ctx.agent_name
@@ -333,6 +357,17 @@ Then run:
 ```bash
 python3 scripts/check-agent-harness.py
 ```
+""",
+        ".agent/bootstrap-provenance.yaml": f"""
+skill_name: "{SKILL_NAME}"
+skill_repo: "{SKILL_REPO}"
+skill_commit: "{detect_skill_commit()}"
+generated_at_utc: "{generated_at_utc()}"
+project_name: "{project}"
+agent_name: "{agent}"
+package_name: "{package}"
+domain: "{domain}"
+runtime_profile: "{runtime_profile}"
 """,
         ".agent/principles.md": """
 # Agent Development Principles
@@ -1367,6 +1402,7 @@ REQUIRED_FILES = [
     "PROJECT.md",
     "DECISIONS.md",
     ".agent/AGENTS.md",
+    ".agent/bootstrap-provenance.yaml",
     ".agent/principles.md",
     ".agent/development-methodology.md",
     ".agent/repo-structure-contract.md",

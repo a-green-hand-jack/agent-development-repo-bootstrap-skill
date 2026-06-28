@@ -27,6 +27,7 @@ scripts/check-agent-harness.py
 
 ```text
 .agent/AGENTS.md
+.agent/bootstrap-provenance.yaml
 .agent/principles.md
 .agent/development-methodology.md
 .agent/repo-structure-contract.md
@@ -84,4 +85,3 @@ dependency drift     local path dependencies, file:// dependencies, private mach
 script drift         curl piped to shell or unregistered external scripts
 memory drift         missing GC files or stale active-memory markers
 ```
-
